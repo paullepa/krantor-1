@@ -122,32 +122,39 @@ func checkFileType(filename string) (string, error) {
 }
 
 func prepareFile(event fsnotify.Event, client *putio.Client) {
-	time.Sleep(100 * time.Millisecond) // wait for WRITE event(s) to finish
+	time.Sleep(100 * time.Millisecond) // warte kurz, bis das Schreiben abgeschlossen ist
 
-	var filepath string // todo, maybe remove?
+	var filepath string
 	var err error
 	var fileType string
 
 	filename := event.Name
 
-	// Checking if the file is a torrent of a magnet file
 	torrentOrMagnet, err := checkFileType(filename)
 	if err != nil {
 		log.Println(err)
+		return
 	} else {
 		fileType = torrentOrMagnet
 	}
 
-	fmt.Printf("Detected new file in watch folder: %v\n", filename)
+	fmt.Printf("Neue Datei erkannt: %v\n", filename)
+
 	if fileType == "torrent" {
 		err = uploadTorrentToPutio(filename, filepath, client)
 		if err != nil {
-			log.Println("err: ", err)
+			log.Println("Upload-Fehler:", err)
+		} else {
+			// Lösche die Datei nach erfolgreichem Upload
+			os.Remove(filename)
 		}
 	} else if fileType == "magnet" {
 		err = transferMagnetToPutio(filename, filepath, client)
 		if err != nil {
-			log.Println("err: ", err)
+			log.Println("Transfer-Fehler:", err)
+		} else {
+			// Lösche die Datei nach erfolgreichem Transfer
+			os.Remove(filename)
 		}
 	}
 }
@@ -214,12 +221,48 @@ func main() {
 		log.Fatalln("connection to Putio err: ", err)
 	}
 
-	// We check that the env variable are set to avoid issues
+	// Prüfe, ob alle nötigen ENV-Variablen gesetzt sind
 	err = checkEnvVariables()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// We start watching the folders
+	// Vor dem Start des Watchers alle vorhandenen Torrent- oder Magnet-Dateien hochladen
+	files, err := ioutil.ReadDir(folderPath)
+	if err != nil {
+		log.Fatalf("Fehler beim Lesen des Verzeichnisses %v: %v\n", folderPath, err)
+	}
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+
+		filename := folderPath + "/" + f.Name()
+
+		fileType, err := checkFileType(filename)
+		if err != nil {
+			// Ist keine Torrent/Magnet-Datei, ignoriere
+			continue
+		}
+
+		if fileType == "torrent" {
+			err = uploadTorrentToPutio(filename, "", client)
+			if err != nil {
+				log.Println("Upload-Fehler:", err)
+			} else {
+				os.Remove(filename)
+			}
+		} else if fileType == "magnet" {
+			err = transferMagnetToPutio(filename, "", client)
+			if err != nil {
+				log.Println("Transfer-Fehler:", err)
+			} else {
+				os.Remove(filename)
+			}
+		}
+	}
+
+	// Starte den Watcher
 	watchFolder(client)
 }
