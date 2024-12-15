@@ -122,32 +122,39 @@ func checkFileType(filename string) (string, error) {
 }
 
 func prepareFile(event fsnotify.Event, client *putio.Client) {
-	time.Sleep(100 * time.Millisecond) // wait for WRITE event(s) to finish
+	time.Sleep(100 * time.Millisecond) // warte kurz, bis das Schreiben abgeschlossen ist
 
-	var filepath string // todo, maybe remove?
+	var filepath string
 	var err error
 	var fileType string
 
 	filename := event.Name
 
-	// Checking if the file is a torrent of a magnet file
 	torrentOrMagnet, err := checkFileType(filename)
 	if err != nil {
 		log.Println(err)
+		return
 	} else {
 		fileType = torrentOrMagnet
 	}
 
-	fmt.Printf("Detected new file in watch folder: %v\n", filename)
+	fmt.Printf("Neue Datei erkannt: %v\n", filename)
+
 	if fileType == "torrent" {
 		err = uploadTorrentToPutio(filename, filepath, client)
 		if err != nil {
-			log.Println("err: ", err)
+			log.Println("Upload-Fehler:", err)
+		} else {
+			// Lösche die Datei nach erfolgreichem Upload
+			os.Remove(filename)
 		}
 	} else if fileType == "magnet" {
 		err = transferMagnetToPutio(filename, filepath, client)
 		if err != nil {
-			log.Println("err: ", err)
+			log.Println("Transfer-Fehler:", err)
+		} else {
+			// Lösche die Datei nach erfolgreichem Transfer
+			os.Remove(filename)
 		}
 	}
 }
