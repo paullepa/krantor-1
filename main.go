@@ -221,12 +221,48 @@ func main() {
 		log.Fatalln("connection to Putio err: ", err)
 	}
 
-	// We check that the env variable are set to avoid issues
+	// Prüfe, ob alle nötigen ENV-Variablen gesetzt sind
 	err = checkEnvVariables()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// We start watching the folders
+	// Vor dem Start des Watchers alle vorhandenen Torrent- oder Magnet-Dateien hochladen
+	files, err := ioutil.ReadDir(folderPath)
+	if err != nil {
+		log.Fatalf("Fehler beim Lesen des Verzeichnisses %v: %v\n", folderPath, err)
+	}
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+
+		filename := folderPath + "/" + f.Name()
+
+		fileType, err := checkFileType(filename)
+		if err != nil {
+			// Ist keine Torrent/Magnet-Datei, ignoriere
+			continue
+		}
+
+		if fileType == "torrent" {
+			err = uploadTorrentToPutio(filename, "", client)
+			if err != nil {
+				log.Println("Upload-Fehler:", err)
+			} else {
+				os.Remove(filename)
+			}
+		} else if fileType == "magnet" {
+			err = transferMagnetToPutio(filename, "", client)
+			if err != nil {
+				log.Println("Transfer-Fehler:", err)
+			} else {
+				os.Remove(filename)
+			}
+		}
+	}
+
+	// Starte den Watcher
 	watchFolder(client)
 }
